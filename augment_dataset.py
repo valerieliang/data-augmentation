@@ -62,6 +62,8 @@ def process_image(image_path, output_dir):
         # Save the augmented image
         cv2.imwrite(output_path, augmented_bgr)
         print(f"Saved {output_path}")
+    
+    # TODO: include bounding box for each image
 
 def main():
     """Main function to process all images in a directory"""
