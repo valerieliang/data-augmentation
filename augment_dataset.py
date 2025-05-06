@@ -16,6 +16,98 @@ def create_output_dir(output_dir):
         os.makedirs(output_dir)
         print(f"Created output directory: {output_dir}")
 
+def parse_label_string(label_string):
+    """
+    Parse label file string into class id and bounding box coordinates
+    Args:
+        label_string: String from label file in YOLO format
+    """
+    parts = label_string.strip().split()
+    class_id = int(parts[0])
+    xc = float(parts[1])
+    yc = float(parts[2])
+    w = float(parts[3])
+    h = float(parts[4])
+    return class_id, xc, yc, w, h
+
+def shear_bounding_boxes(bboxes, shear_factor, img_width, img_height):
+    """
+    Apply shear transformation to bounding boxes.
+    
+    Args:
+        bboxes: List of bounding boxes as [xmin, ymin, xmax, ymax].
+        shear_factor: Shear factor for the transformation.
+        img_width: Width of the image.
+        img_height: Height of the image.
+    
+    Returns:
+        Updated bounding boxes after shear transformation.
+    """
+    # Transformation matrix for shear
+    M_inv = np.float32([[1, 0, 0], [-shear_factor, 1, 0]])  # Inverse shear matrix
+
+    updated_bboxes = []
+    for bbox in bboxes:
+        xmin, ymin, xmax, ymax = bbox
+        
+        # Transform the four corners of the bounding box
+        corners = np.array([[xmin, ymin, 1],
+                            [xmax, ymin, 1],
+                            [xmin, ymax, 1],
+                            [xmax, ymax, 1]], dtype=np.float32)
+        
+        # Apply shear transformation to corners
+        transformed_corners = np.dot(corners, M_inv.T)
+        
+        # Get new bounding box coordinates
+        new_xmin = max(0, min(transformed_corners[:, 0]))
+        new_ymin = max(0, min(transformed_corners[:, 1]))
+        new_xmax = min(img_width, max(transformed_corners[:, 0]))
+        new_ymax = min(img_height, max(transformed_corners[:, 1]))
+        
+        updated_bboxes.append([new_xmin, new_ymin, new_xmax, new_ymax])
+    
+    return updated_bboxes
+
+def rotate_bounding_boxes(bboxes, angle, img_width, img_height):
+    """
+    Apply rotation to bounding boxes.
+    
+    Args:
+        bboxes: List of bounding boxes as [xmin, ymin, xmax, ymax].
+        angle: Angle in degrees to rotate the bounding boxes.
+        img_width: Width of the image.
+        img_height: Height of the image.
+    
+    Returns:
+        Updated bounding boxes after rotation.
+    """
+    angle_rad = np.deg2rad(angle)
+    M_inv = cv2.getRotationMatrix2D((img_width / 2, img_height / 2), -angle, 1)  # Inverse rotation matrix
+
+    updated_bboxes = []
+    for bbox in bboxes:
+        xmin, ymin, xmax, ymax = bbox
+        
+        # Rotate the four corners of the bounding box
+        corners = np.array([[xmin, ymin],
+                            [xmax, ymin],
+                            [xmin, ymax],
+                            [xmax, ymax]], dtype=np.float32)
+        
+        # Apply rotation transformation to corners
+        rotated_corners = cv2.transform(np.array([corners]), M_inv)[0]
+
+        # Get new bounding box coordinates
+        new_xmin = max(0, min(rotated_corners[:, 0]))
+        new_ymin = max(0, min(rotated_corners[:, 1]))
+        new_xmax = min(img_width, max(rotated_corners[:, 0]))
+        new_ymax = min(img_height, max(rotated_corners[:, 1]))
+        
+        updated_bboxes.append([new_xmin, new_ymin, new_xmax, new_ymax])
+    
+    return updated_bboxes
+
 def process_image(image_path, output_dir, label_path, output_labels_dir):
     """
     Apply various filters to an image and save results
@@ -86,7 +178,21 @@ def process_image(image_path, output_dir, label_path, output_labels_dir):
             dst_label_filename = f"{name}_{aug_name}{label_ext}"
             dst_label_path = os.path.join(output_labels_dir, dst_label_filename)
             
-            # TODO: if applying change of basis transformations, apply to labels as well
+            # TODO: if applying change of basis transformations, apply to bounding boxes as well
+            img_height, img_width, _ = augmented_img.shape
+            if aug_name == 'rotate' and bboxes:
+                bboxes = rotate_bounding_boxes(bboxes, angle=random.randint(0, 360), img_width=img_width, img_height=img_height)
+            elif aug_name == 'shear' and bboxes:
+                bboxes = shear_bounding_boxes(bboxes, shear_factor=random.uniform(-0.5, 0.5), img_width=img_width, img_height=img_height)
+            elif aug_name == 'flip' and bboxes:
+                # Flip bounding boxes
+                for i, bbox in enumerate(bboxes):
+                    xmin, ymin, xmax, ymax = bbox
+                    if random.choice([True, False]):
+                        bboxes[i] = [img_width - xmax, ymin, img_width - xmin, ymax]  # Horizontal flip
+                    else:
+                        bboxes[i] = [xmin, img_height - ymax, xmax, img_height - ymin]
+            
 
             # else, Copy the label content
             with open(label_path, 'r') as src_file:
