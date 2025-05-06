@@ -2,6 +2,7 @@ import os
 import argparse
 import cv2
 import numpy as np
+import random
 from filters import ImageAugmentation
 
 def create_output_dir(output_dir):
@@ -51,6 +52,9 @@ def process_image(image_path, output_dir, label_path, output_labels_dir):
         'gaussian_blur': lambda img: ImageAugmentation.gaussian_blur(img, kernel_size=9, sigma=1.0),
         'sharpen': lambda img: ImageAugmentation.sharpen_image(img),
         # TODO: add change of basis transformations
+        'rotate': lambda img: ImageAugmentation.rotate_image(img, angle=random.randint(0, 360)),
+        'flip': lambda img: ImageAugmentation.flip_image(img, flip_code=random.choice(['x', 'y'])),
+        'shear': lambda img: ImageAugmentation.shear_image(img, shear_factor=random.uniform(-0.5, 0.5)),
     }
     
     # Apply each augmentation and save

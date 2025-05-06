@@ -221,8 +221,8 @@ class ImageAugmentation:
         """
         # define kernel
         laplacian_kernel = np.array([[0, 1, 0],
-                                     [1, -4, 1],
-                                     [0, 1, 0]], dtype=np.float32)
+                                                                [1, -4, 1],
+                                                                [0, 1, 0]], dtype=np.float32)
 
         if image.ndim == 3:
             sharpened = np.stack([
@@ -236,30 +236,6 @@ class ImageAugmentation:
         sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
         
         return sharpened
-    
-    @staticmethod
-    def opencv_sharpen(image):
-        """
-        Sharpen the image using OpenCV's Laplacian operator.
-        
-        Args:
-            image: Input image (numpy array)
-            
-        Returns:
-            Sharpened image (numpy array)
-        """
-        # convert to float for precision
-        image = image.astype(np.float32)
-        # apply Laplacian on each channel (R, G, B)
-        sharpened_image = np.zeros_like(image)
-        for c in range(image.shape[2]):
-            laplacian = cv2.Laplacian(image[:, :, c], cv2.CV_32F, ksize=3)
-            sharpened_image[:, :, c] = image[:, :, c] - laplacian
-
-        # return the sharpened image as integer data
-        sharpened_image = np.clip(sharpened_image, 0, 255).astype(np.uint8)
-        
-        return sharpened_image
     
     @staticmethod
     def rotate_image(image, angle):
@@ -326,8 +302,6 @@ class ImageAugmentation:
             flipped_image = image[::-1, ...]  # reverse rows
         elif axis == 'y':  # horizontal flip
             flipped_image = image[:, ::-1, ...]  # reverse columns
-        else:
-            raise ValueError("Axis must be either 'x' or 'y'")
         
         return flipped_image
     
