@@ -30,31 +30,59 @@ def parse_label_string(label_string):
     h = float(parts[4])
     return class_id, xc, yc, w, h
 
-def shear_bounding_boxes(bboxes, shear_factor, img_width, img_height):
+def calculate_bounding_box(xc, yc, w, h, img_width, img_height):
     """
-    Apply shear transformation to bounding boxes.
+    Calculate bounding box coordinates from YOLO format
+    Args:
+        xc: Center x coordinate (relative to image width)
+        yc: Center y coordinate (relative to image height)
+        w: Width of the bounding box (relative to image width)
+        h: Height of the bounding box (relative to image height)
+        img_width: Width of the image
+        img_height: Height of the image
+    Returns:
+        Bounding box coordinates in [xmin, ymin, xmax, ymax] format
+    """
+    xmin = int((xc - w / 2) * img_width)
+    ymin = int((yc - h / 2) * img_height)
+    xmax = int((xc + w / 2) * img_width)
+    ymax = int((yc + h / 2) * img_height)
+    return [xmin, ymin, xmax, ymax]
+
+def shear_bounding_boxes(bboxes, shear_factor_x, shear_factor_y, img_width, img_height):
+    """
+    Apply shear transformation to bounding boxes with separate x and y shear factors.
     
     Args:
         bboxes: List of bounding boxes as [xmin, ymin, xmax, ymax].
-        shear_factor: Shear factor for the transformation.
+        shear_factor_x: Horizontal shear factor for the transformation.
+        shear_factor_y: Vertical shear factor for the transformation.
         img_width: Width of the image.
         img_height: Height of the image.
     
     Returns:
         Updated bounding boxes after shear transformation.
     """
-    # Transformation matrix for shear
-    M_inv = np.float32([[1, 0, 0], [-shear_factor, 1, 0]])  # Inverse shear matrix
+    # Transformation matrix for shear with both x and y factors
+    # For x-shear: [1, shear_factor_x, 0; 0, 1, 0]
+    # For y-shear: [1, 0, 0; shear_factor_y, 1, 0]
+    # Combined shear matrix:
+    M_inv = np.float32([
+        [1, shear_factor_x, 0],
+        [shear_factor_y, 1, 0]
+    ])  # Inverse shear matrix
 
     updated_bboxes = []
     for bbox in bboxes:
         xmin, ymin, xmax, ymax = bbox
         
         # Transform the four corners of the bounding box
-        corners = np.array([[xmin, ymin, 1],
-                            [xmax, ymin, 1],
-                            [xmin, ymax, 1],
-                            [xmax, ymax, 1]], dtype=np.float32)
+        corners = np.array([
+            [xmin, ymin, 1],
+            [xmax, ymin, 1],
+            [xmin, ymax, 1],
+            [xmax, ymax, 1]
+        ], dtype=np.float32)
         
         # Apply shear transformation to corners
         transformed_corners = np.dot(corners, M_inv.T)
@@ -130,6 +158,11 @@ def process_image(image_path, output_dir, label_path, output_labels_dir):
     
     # Convert to RGB for processing
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+    angle=random.randint(0, 360)
+    flip_code=random.choice(['x', 'y'])
+    shear_factor_x=random.uniform(-0.5, 0.5)
+    shear_factor_y=random.uniform(-0.5, 0.5)
     
     # Dictionary of augmentation functions and their parameters
     augmentations = {
@@ -143,10 +176,9 @@ def process_image(image_path, output_dir, label_path, output_labels_dir):
         'salt_pepper': lambda img: ImageAugmentation.salt_and_pepper_noise(img, density=0.02),
         'gaussian_blur': lambda img: ImageAugmentation.gaussian_blur(img, kernel_size=9, sigma=1.0),
         'sharpen': lambda img: ImageAugmentation.sharpen_image(img),
-        # TODO: add change of basis transformations
-        'rotate': lambda img: ImageAugmentation.rotate_image(img, angle=random.randint(0, 360)),
-        'flip': lambda img: ImageAugmentation.flip_image(img, flip_code=random.choice(['x', 'y'])),
-        'shear': lambda img: ImageAugmentation.shear_image(img, shear_factor=random.uniform(-0.5, 0.5)),
+        'rotate': lambda img: ImageAugmentation.rotate_image(img, angle=angle),
+        'flip': lambda img: ImageAugmentation.reflect_image(img, flip_code),
+        'shear': lambda img: ImageAugmentation.shear_image(img, shear_factor_x=shear_factor_x, shear_factor_y=shear_factor_y)
     }
     
     # Apply each augmentation and save
@@ -178,28 +210,44 @@ def process_image(image_path, output_dir, label_path, output_labels_dir):
             dst_label_filename = f"{name}_{aug_name}{label_ext}"
             dst_label_path = os.path.join(output_labels_dir, dst_label_filename)
             
-            # TODO: if applying change of basis transformations, apply to bounding boxes as well
-            img_height, img_width, _ = augmented_img.shape
-            if aug_name == 'rotate' and bboxes:
-                bboxes = rotate_bounding_boxes(bboxes, angle=random.randint(0, 360), img_width=img_width, img_height=img_height)
-            elif aug_name == 'shear' and bboxes:
-                bboxes = shear_bounding_boxes(bboxes, shear_factor=random.uniform(-0.5, 0.5), img_width=img_width, img_height=img_height)
-            elif aug_name == 'flip' and bboxes:
-                # Flip bounding boxes
-                for i, bbox in enumerate(bboxes):
-                    xmin, ymin, xmax, ymax = bbox
-                    if random.choice([True, False]):
-                        bboxes[i] = [img_width - xmax, ymin, img_width - xmin, ymax]  # Horizontal flip
-                    else:
-                        bboxes[i] = [xmin, img_height - ymax, xmax, img_height - ymin]
-            
+            if (aug_name == 'rotate' or aug_name == 'shear' or aug_name == 'flip') and os.path.exists(label_path):
+                img_height, img_width, _ = augmented_img.shape
+                bboxes = []
+                # Read the label file and parse bounding boxes
+                with open(label_path, 'r') as src_file:
+                    for line in src_file:
+                        class_id, xc, yc, w, h = parse_label_string(line)
+                        bbox = calculate_bounding_box(xc, yc, w, h, img_width, img_height)
+                        bboxes.append(bbox)
+                if aug_name == 'rotate' and bboxes:
+                    bboxes = rotate_bounding_boxes(bboxes, angle, img_width=img_width, img_height=img_height)
+                elif aug_name == 'shear' and bboxes:
+                    bboxes = shear_bounding_boxes(bboxes, shear_factor_x, shear_factor_y, img_width=img_width, img_height=img_height)
+                elif aug_name == 'flip' and bboxes:
+                    # Flip bounding boxes
+                    for i, bbox in enumerate(bboxes):
+                        xmin, ymin, xmax, ymax = bbox
+                        if random.choice([True, False]):
+                            bboxes[i] = [img_width - xmax, ymin, img_width - xmin, ymax]  # Horizontal flip
+                        else:
+                            bboxes[i] = [xmin, img_height - ymax, xmax, img_height - ymin]
 
-            # else, Copy the label content
-            with open(label_path, 'r') as src_file:
-                label_content = src_file.read()
-                
-            with open(dst_label_path, 'w') as dst_file:
-                dst_file.write(label_content)
+                # Write the updated bounding boxes to the new label file
+                with open(dst_label_path, 'w') as dst_file:
+                    for bbox in bboxes:
+                        # Convert back to YOLO format
+                        xmin, ymin, xmax, ymax = bbox
+                        xc = (xmin + xmax) / (2 * img_width)
+                        yc = (ymin + ymax) / (2 * img_height)
+                        w = (xmax - xmin) / img_width
+                        h = (ymax - ymin) / img_height
+                        dst_file.write(f"{class_id} {xc} {yc} {w} {h}\n")
+            else:
+                # else, Copy the label content
+                with open(label_path, 'r') as src_file:
+                    label_content = src_file.read()                
+                with open(dst_label_path, 'w') as dst_file:
+                    dst_file.write(label_content)
                 
             print(f"Saved label: {dst_label_path}")
     
