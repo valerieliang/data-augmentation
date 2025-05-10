@@ -7,24 +7,28 @@ The augment_dataset.py script applies various image augmentation techniques to a
 ## Features
 The script applies the following augmentations to each image:
 
-Pixel-Level Augmentations (Preserves Bounding Boxes)
-Brightness: Increased and decreased brightness
-Contrast: Increased and decreased contrast
-Saturation: Increased and decreased saturation
-Black & White: Complete desaturation
-Salt & Pepper Noise: Random noise addition
-Gaussian Blur: Smoothing filter
-Sharpening: Edge enhancement
-Geometric Augmentations (Updates Bounding Boxes)
-Rotation: Random rotation with angle between 0-360 degrees
-Flipping: Random horizontal or vertical flipping
-Shearing: Random horizontal and vertical shearing
+Point-wise/Pixel-Level Augmentations (Preserves Bounding Boxes)
+
+- Brightness: Increased and decreased brightness
+- Contrast: Increased and decreased contrast
+- Saturation: Increased and decreased saturation, Black & White: Complete desaturation
+- Salt & Pepper Noise: Random noise addition
+
+Convolutions:
+
+- Gaussian Blur: Smoothing filter
+- Sharpening: Edge enhancement
+
+Geometric Transformations (Updates Bounding Boxes)
+
+- Rotation: Random rotation with angle between 0-360 degrees
+- Flipping: Random horizontal or vertical flipping
+- Shearing: Random horizontal and vertical shearing
 
 ## Usage
 ```
 python augment_dataset.py input_dir [--output_dir OUTPUT_DIR] [--labels_dir LABELS_DIR] [--output_labels_dir OUTPUT_LABELS_DIR]
 ```
-
 
 ### Arguments
 
